@@ -5,9 +5,12 @@ node_modules/
 /node_modules
 /.pnp
 .pnp.js
+*.jsonl
 
 # testing
 /coverage
+test.ipynb
+test.py
 
 # next.js
 .next/
@@ -44,6 +47,7 @@ __pycache__/
 *.so
 .Python
 venv/
+.venv/
 env/
 ENV/
 
