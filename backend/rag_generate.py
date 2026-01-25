@@ -14,6 +14,8 @@ Usage:
 """
 
 import os
+import logging
+from tokenize import generate_tokens
 import requests
 from typing import Optional
 from dataclasses import dataclass
@@ -21,54 +23,12 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 load_dotenv()
 
-from retrieval_pipeline import RetrievalPipeline, RetrievalResult
+from prompts import SYSTEM_PROMPT, QUERY_REFINEMENT_PROMPT
+from config import GenerationConfig, RetrievalResult, RetrievalPipelineConfig
+from retrieval_pipeline import RetrievalPipeline
 
-
-# =============================================================================
-# SYSTEM PROMPT - This tells the LLM how to behave
-# =============================================================================
-SYSTEM_PROMPT = """You are an expert research assistant specializing in computer graphics, specifically SIGGRAPH 2025 papers.
-
-Your task is to answer questions using ONLY the provided research paper excerpts.
-
-Rules:
-1. Cite sources using [Paper Title] format
-2. Be comprehensive and technically accurate
-3. If the excerpts don't contain the answer, say so
-4. Use LaTeX for math: $inline$ or $$block$$
-5. Do NOT make up information not in the excerpts
-6. Do NOT include a References section at the end
-"""
-
-
-# =============================================================================
-# QUERY REFINEMENT PROMPT
-# =============================================================================
-QUERY_REFINEMENT_PROMPT = """You are an expert at refining search queries for academic paper retrieval.
-
-Given a user's question, rewrite it as a clear, focused search query that will retrieve the most relevant research papers.
-
-Keep it concise (under 20 words). Focus on key technical terms.
-
-User question: {query}
-
-Refined search query:"""
-
-
-# =============================================================================
-# CONFIGURATION
-# =============================================================================
-@dataclass
-class GenerationConfig:
-    """Configuration for the RAG generator."""
-    llm_model: str = "openai/gpt-4o"  # Model to use for answer generation
-    temperature: float = 0.1  # Low temperature for factual answers
-    max_tokens: int = 2000  # Max length of generated answer
-    openrouter_api_key: Optional[str] = None  # Will load from env if not set
-    refine_query: bool = True  # Whether to refine queries before retrieval
-    refinement_model: str = "openai/gpt-3.5-turbo"  # Cheaper model for refinement
-    retrieval_top_k: int = 8  # Number of chunks to retrieve
-
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # RAG GENERATOR CLASS
@@ -110,7 +70,15 @@ class RAGGenerator:
             config: Optional configuration object
             retrieval_pipeline: Optional pre-initialized retrieval pipeline
         """
-        pass
+        generation_config = config or GenerationConfig()
+        retrieval_config = RetrievalPipelineConfig()
+        self.config = generation_config
+        self.retrieval = retrieval_pipeline or RetrievalPipeline(config=retrieval_config)
+        self.openrouter_api_key = self.config.openrouter_api_key or os.getenv("OPENROUTER_API_KEY")
+        self.openrouter_base_url = "https://openrouter.ai/api/v1"
+        if not self.openrouter_api_key:
+            raise ValueError("OPENROUTER_API_KEY not set")
+        self.openrouter_base_url = "https://openrouter.ai/api/v1"
     
     def refine_query(self, query: str) -> str:
         """
@@ -147,7 +115,27 @@ class RAGGenerator:
         Returns:
             Refined query (or original if refinement disabled/fails)
         """
-        pass
+        if not self.config.refine_query:
+            return query
+
+        prompt = QUERY_REFINEMENT_PROMPT.format(query=query)
+        headers = {"Authorization": f"Bearer {self.openrouter_api_key}", "Content-Type": "application/json"}
+        payload = {
+            "model": self.config.refinement_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.3,
+            "max_tokens": 100
+        }
+        try:
+            response = requests.post(f"{self.openrouter_base_url}/chat/completions", headers=headers, json=payload)
+            response.raise_for_status()
+            response_json = response.json()
+            refined = response_json["choices"][0]["message"]["content"].strip()
+            return refined
+        except:
+            logger.error("Failed to refine query, returning original query")
+            return query
+        
     
     def _format_context(self, results: list[RetrievalResult]) -> str:
         """
@@ -177,7 +165,20 @@ class RAGGenerator:
         Returns:
             Formatted context string
         """
-        pass
+        context = ""
+        for i, result in enumerate(results, 1):
+            context += f"""
+            --- Source {i} ---
+            Title: {result.title}
+            Authors: {result.authors}
+            Section: {result.chunk_section}
+
+            Content:
+            {result.text}
+            """
+            context += "\n"
+        context += "\n"
+        return context
     
     def _build_sources_metadata(self, results: list[RetrievalResult]) -> list[dict]:
         """
@@ -209,7 +210,28 @@ class RAGGenerator:
         Returns:
             List of unique source metadata dicts
         """
-        pass
+        seen = {}
+
+        for result in results:
+            if result.title not in seen:
+                seen[result.title] = {
+                    "title": result.title,
+                    "authors": result.authors,
+                    "pdf_url": result.pdf_url,
+                    "github_link": result.github_link,
+                    "video_link": result.video_link,
+                    "acm_url": result.acm_url,
+                    "abstract_url": result.abstract_url,
+                }
+            else:
+                seen[result.title]["authors"] += f", {result.authors}"
+                seen[result.title]["pdf_url"] = result.pdf_url
+                seen[result.title]["github_link"] = result.github_link
+                seen[result.title]["video_link"] = result.video_link
+                seen[result.title]["acm_url"] = result.acm_url
+                seen[result.title]["abstract_url"] = result.abstract_url
+
+        return seen
     
     def _call_llm(self, query: str, context: str) -> str:
         """
@@ -256,7 +278,37 @@ class RAGGenerator:
         Returns:
             Generated answer string
         """
-        pass
+        user_message = f"""
+        Based on the following research paper excerpts, answer this question.
+
+        Question: {query}
+
+        Research Paper Excerpts:
+        {context}
+
+        Remember to cite papers using [Paper Title] format.
+        """
+        headers = {"Authorization": f"Bearer {self.openrouter_api_key}", "Content-Type": "application/json"}
+
+        payload = {
+            "model": self.config.llm_model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_message}
+            ],
+            "temperature": self.config.temperature,
+            "max_tokens": self.config.max_tokens
+        }
+        try:
+            response = requests.post(f"{self.openrouter_base_url}/chat/completions", headers=headers, json=payload)
+            response.raise_for_status()
+            response_json = response.json()
+            answer = response_json["choices"][0]["message"]["content"]
+            return answer
+        except:
+            logger.error("Failed to call LLM")
+            return "I couldn't find any relevant papers to answer this question."
+    
     
     def generate(self, query: str, top_k: Optional[int] = None, return_sources: bool = True) -> dict:
         """
@@ -297,7 +349,24 @@ class RAGGenerator:
         Returns:
             Dict with query, refined_query, answer, and sources
         """
-        pass
+        refined_query = self.refine_query(query)
+        results = self.retrieval.retrieve(refined_query, top_k=top_k)
+        if not results:
+            return {
+                "query": query,
+                "refined_query": refined_query,
+                "answer": "I couldn't find any relevant papers to answer this question.",
+                "sources": []
+            }
+        context = self._format_context(results)
+        answer = self._call_llm(query, context)
+        sources = self._build_sources_metadata(results) if return_sources else []
+        return {
+            "query": query,
+            "refined_query": refined_query,
+            "answer": answer,
+            "sources": sources
+        }
 
 
 # =============================================================================

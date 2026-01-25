@@ -1,17 +1,23 @@
 """Mock RAG Generator for testing API integration."""
+import os
 import time
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
+
+from dotenv import load_dotenv
+load_dotenv()
 
 SYSTEM_PROMPT = """You are a helpful AI assistant that answers questions about SIGGRAPH 2025 papers."""
 
 @dataclass
 class GenerationConfig:
+    openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY")
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    llm_model: str = "gpt-4o-mini"
     llm_provider: str = "openai"
     retrieval_top_k: int = 8
     refine_query: bool = True
     use_reranker: bool = True
-    openai_model: str = "gpt-4"
     temperature: float = 0.3
     max_tokens: int = 1000
 

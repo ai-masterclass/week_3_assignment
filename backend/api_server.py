@@ -33,7 +33,11 @@ try:
 except ImportError:
     pass
 
-from test_backend_integration import RAGGenerator, GenerationConfig, SYSTEM_PROMPT
+from rag_generate import RAGGenerator 
+from config import GenerationConfig, RetrievalPipelineConfig
+from prompts import SYSTEM_PROMPT
+
+# from test_backend_integration import RAGGenerator, GenerationConfig, SYSTEM_PROMPT
 
 
 # Global instances
@@ -261,12 +265,16 @@ IMPORTANT: You have been provided with {len(results)} paper excerpts. Make sure 
             "stream": True
         }
         
-        response = requests.post(
-            f"{rag_generator.openrouter_base_url}/chat/completions",
-            headers=headers,
-            json=payload,
-            stream=True
-        )
+        try:
+            response = requests.post(
+                f"{rag_generator.openrouter_base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                stream=True
+            )
+        except Exception as e:
+            print(e)
+            return
         
         answer_chunks = []
         for line in response.iter_lines():
@@ -284,9 +292,7 @@ IMPORTANT: You have been provided with {len(results)} paper excerpts. Make sure 
                             yield emit("chunk", {"content": content})
                     except json.JSONDecodeError:
                         continue
-        
         answer = "".join(answer_chunks)
-        
         # Stage 4: Complete
         processing_time = time.time() - start_time
         yield emit("complete", {
