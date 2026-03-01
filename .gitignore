@@ -16,10 +16,16 @@ node_modules/
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
 *.pem
+*.log
+
+# IDE
+.vscode/
+.idea/
 
 # debug
 npm-debug.log*
@@ -27,6 +33,7 @@ yarn-debug.log*
 ts-debug.log*
 
 # local env files
+.env.local
 .env*.local
 .env
 
