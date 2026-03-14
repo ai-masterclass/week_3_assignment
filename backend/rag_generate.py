@@ -56,7 +56,7 @@ Refined search query:"""
 
 
 # =============================================================================
-# CONFIGURATION
+# CONFIGURATION 
 # =============================================================================
 @dataclass
 class GenerationConfig:
@@ -110,7 +110,23 @@ class RAGGenerator:
             config: Optional configuration object
             retrieval_pipeline: Optional pre-initialized retrieval pipeline
         """
-        pass
+        # 1. Set config
+        self.config = config or GenerationConfig()
+
+        # 2. Initialize retrieval pipeline
+        self.retrieval = retrieval_pipeline or RetrievalPipeline()
+
+        # 3. Load OpenRouter API key
+        self.openrouter_api_key = self.config.openrouter_api_key or os.getenv("OPENROUTER_API_KEY")
+        print(f"DEBUG: API key length: {len(self.openrouter_api_key) if self.openrouter_api_key else 'None'}")
+        print(f"DEBUG: API key starts with: {self.openrouter_api_key[:10] if self.openrouter_api_key else 'None'}...")
+
+        # 4. Validate API key
+        if not self.openrouter_api_key:
+            raise ValueError("OPENROUTER_API_KEY not set")
+
+        # 5. Store base URL
+        self.openrouter_base_url = "https://openrouter.ai/api/v1"
     
     def refine_query(self, query: str) -> str:
         """
@@ -147,7 +163,40 @@ class RAGGenerator:
         Returns:
             Refined query (or original if refinement disabled/fails)
         """
-        pass
+        if not self.config.refine_query:
+            return query
+
+        prompt = QUERY_REFINEMENT_PROMPT.format(query=query)
+
+        headers = {
+            "Authorization": f"Bearer {self.openrouter_api_key}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": self.config.refinement_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.3,
+            "max_tokens": 100
+        }
+
+        try:
+            response = requests.post(
+                f"{self.openrouter_base_url}/chat/completions",
+                headers=headers,
+                json=payload
+            )
+
+            response.raise_for_status()
+
+            response_json = response.json()
+
+            refined = response_json["choices"][0]["message"]["content"].strip()
+
+            return refined.strip('"')
+
+        except Exception:
+            return query
     
     def _format_context(self, results: list[RetrievalResult]) -> str:
         """
@@ -177,7 +226,23 @@ class RAGGenerator:
         Returns:
             Formatted context string
         """
-        pass
+        formatted_sources = []
+
+        for i, result in enumerate(results, start=1):
+
+            formatted = f"""
+                --- Source {i} ---
+                Title: {result.title}
+                Authors: {result.authors}
+                Section: {result.chunk_section}
+
+                Content:
+                {result.text}
+                """
+
+            formatted_sources.append(formatted)
+
+        return "\n".join(formatted_sources)
     
     def _build_sources_metadata(self, results: list[RetrievalResult]) -> list[dict]:
         """
@@ -209,7 +274,31 @@ class RAGGenerator:
         Returns:
             List of unique source metadata dicts
         """
-        pass
+            # 1. Track seen titles
+        seen = {}
+        print(f"DEBUG: seen type: {type(seen)}")
+        print(f"DEBUG: seen initial: {seen}")
+
+        # 2. Iterate through results
+        for result in results:
+            if result.title not in seen:
+                seen[result.title] = {
+                    "title": result.title,
+                    "authors": result.authors,
+                    "pdf_url": result.pdf_url,
+                    "github_link": result.github_link,
+                    "video_link": result.video_link,
+                    "acm_url": result.acm_url,
+                    "abstract_url": result.abstract_url,
+                }
+
+        # 3. Return dictionary of unique sources (so .values() works)
+        print(f"DEBUG: seen before values(): {type(seen)} - {seen}")
+        try:
+            return seen  # Return the dictionary, not list(seen.values())
+        except Exception as e:
+            print(f"DEBUG: Error in seen.values(): {type(seen)} - {str(e)}")
+            raise
     
     def _call_llm(self, query: str, context: str) -> str:
         """
@@ -256,7 +345,45 @@ class RAGGenerator:
         Returns:
             Generated answer string
         """
-        pass
+        user_message = f"""Based on the following research paper excerpts, answer this question.
+
+            Question: {query}
+
+            Research Paper Excerpts:
+            {context}
+
+            Remember to cite papers using [Paper Title] format.
+            """
+
+        headers = {
+            "Authorization": f"Bearer {self.openrouter_api_key}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": self.config.llm_model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_message}
+            ],
+            "temperature": self.config.temperature,
+            "max_tokens": self.config.max_tokens
+        }
+
+        response = requests.post(
+            f"{self.openrouter_base_url}/chat/completions",
+            headers=headers,
+            json=payload
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"OpenRouter API error: {response.status_code} - {response.text}")
+
+        response_json = response.json()
+
+        answer = response_json["choices"][0]["message"]["content"]
+
+        return answer
     
     def generate(self, query: str, top_k: Optional[int] = None, return_sources: bool = True) -> dict:
         """
@@ -297,7 +424,37 @@ class RAGGenerator:
         Returns:
             Dict with query, refined_query, answer, and sources
         """
-        pass
+        if top_k is None:
+            top_k = self.config.retrieval_top_k
+
+        # 1. Refine query
+        refined = self.refine_query(query)
+
+        # 2. Retrieve chunks
+        results = self.retrieval.retrieve(refined, top_k=top_k)
+
+        # 3. Handle empty results
+        if not results:
+            return {
+                "query": query,
+                "refined_query": refined,
+                "answer": "I couldn't find any relevant papers to answer this question.",
+                "sources": []
+            }
+
+        # 4. Format context
+        context = self._format_context(results)
+
+        # 5. Generate answer
+        answer = self._call_llm(refined, context)
+
+        # 6. Return result
+        return {
+            "query": query,
+            "refined_query": refined,
+            "answer": answer,
+            "sources": self._build_sources_metadata(results) if return_sources else []
+        }
 
 
 # =============================================================================
