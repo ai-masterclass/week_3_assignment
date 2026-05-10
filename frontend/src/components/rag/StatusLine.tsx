@@ -11,64 +11,65 @@ export function StatusLine({
   isActive,
   currentStage = "",
 }: StatusLineProps) {
-  // Get icon based on stage
   const getStageIcon = (stage: string): string => {
     const iconMap: Record<string, string> = {
-      connecting: "🔌",
-      refining: "🔧",
-      refined: "✨",
-      semantic_search: "🔍",
-      semantic_done: "✅",
-      bm25_search: "📝",
-      bm25_done: "✅",
-      fusion: "🔀",
-      reranking: "📊",
-      found: "📚",
-      generating: "🤖",
-      writing: "✍️",
-      complete: "✅",
-      error: "❌",
+      connecting: "LINK",
+      refining: "REFN",
+      refined: "DONE",
+      semantic_search: "VSRC",
+      semantic_done: "DONE",
+      bm25_search: "TSRC",
+      bm25_done: "DONE",
+      fusion: "FUSE",
+      reranking: "RANK",
+      found: "DOCS",
+      generating: "GEN",
+      writing: "STRM",
+      complete: "DONE",
+      error: "ERR!",
     };
-    return iconMap[stage] || "⏳";
+    return iconMap[stage] || "WAIT";
   };
 
-  const icon = getStageIcon(currentStage);
-  // Use the actual message from backend which contains detailed info
+  const stageCode = getStageIcon(currentStage);
   const displayMessage = message || "Processing...";
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-3 py-2">
-      <div className="flex items-center gap-2">
-        {/* Status Text */}
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          {isActive && (
-            <svg
-              className="w-3.5 h-3.5 text-blue-600 animate-spin flex-shrink-0"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              ></circle>
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-          )}
-          <span className="flex-shrink-0">{icon}</span>
-          <p
-            className={`text-xs md:text-sm font-medium truncate ${isActive ? "text-gray-900" : "text-gray-600"}`}
-          >
-            {displayMessage}
-          </p>
-        </div>
+    <div className="rounded-lg border border-white/5 bg-[#0d0d14]/80 px-4 py-2.5 glow-border">
+      <div className="flex items-center gap-3">
+        {/* Stage Code */}
+        <span className={`font-mono text-[10px] tracking-wider px-2 py-0.5 rounded ${
+          currentStage === 'error' 
+            ? 'bg-red-500/10 text-red-400 border border-red-500/20' 
+            : currentStage === 'complete'
+            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+            : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+        }`}>
+          {stageCode}
+        </span>
+
+        {/* Spinner */}
+        {isActive && (
+          <div className="flex gap-1">
+            <span className="w-1 h-1 rounded-full bg-cyan-400 animate-pulse" style={{ animationDelay: '0ms' }} />
+            <span className="w-1 h-1 rounded-full bg-cyan-400 animate-pulse" style={{ animationDelay: '150ms' }} />
+            <span className="w-1 h-1 rounded-full bg-cyan-400 animate-pulse" style={{ animationDelay: '300ms' }} />
+          </div>
+        )}
+
+        {/* Message */}
+        <p className={`text-xs md:text-sm font-medium truncate flex-1 ${
+          isActive ? "text-gray-300" : "text-gray-500"
+        }`}>
+          {displayMessage}
+        </p>
+
+        {/* Active indicator line */}
+        {isActive && (
+          <div className="w-16 h-0.5 rounded-full bg-gradient-to-r from-cyan-500/50 to-transparent overflow-hidden">
+            <div className="w-full h-full bg-cyan-400 animate-pulse" />
+          </div>
+        )}
       </div>
     </div>
   );

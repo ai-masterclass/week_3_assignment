@@ -22,13 +22,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={fontVariables}>
-      <body className="font-body antialiased bg-gray-100 bg-[url('/light-grey-dots-background_78370-2583.avif')] bg-repeat">
+      <body className="font-body antialiased bg-[#0a0a0f] text-gray-100 overflow-x-hidden">
         <a href="#main-content" className="skip-to-content">
           Skip to main content
         </a>
+        <div className="ambient-glow" />
+        <div className="scanline" />
         {children}
       </body>
     </html>
   )
 }
-

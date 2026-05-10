@@ -31,20 +31,27 @@ export default function Home() {
   };
 
   return (
-    <main className="bg-grid-square bg-white text-gray-900 min-h-screen flex flex-col">
+    <main className="relative min-h-screen flex flex-col z-10">
       <div className="container mx-auto px-4 py-8 md:py-16 max-w-4xl flex-grow flex flex-col">
         <div className="flex-grow">
-          {/* Header - Logo */}
-          <div className="text-center mb-12 md:mb-16">
-            <h1 className="text-2xl md:text-5xl font-semibold text-gray-900 tracking-tight">
-              SIG-RAG
+          {/* Header */}
+          <div className="text-center mb-12 md:mb-16 animate-float">
+            <div className="inline-block mb-3">
+              <span className="text-[10px] md:text-xs uppercase tracking-[0.3em] text-cyan-400/60 font-medium">
+                Retrieval-Augmented Generation
+              </span>
+            </div>
+            <h1 className="text-4xl md:text-7xl font-semibold tracking-tight glow-text">
+              <span className="bg-gradient-to-r from-cyan-300 via-cyan-400 to-blue-400 bg-clip-text text-transparent">
+                SIG-RAG
+              </span>
             </h1>
-            <p className="text-gray-600 mt-2">
-              Search built for SIGGRAPH 2025 research papers
+            <p className="text-gray-500 mt-3 text-sm md:text-base tracking-wide">
+              AI-powered search for SIGGRAPH 2025 research papers
             </p>
           </div>
 
-          {/* Query Form - Hero Section */}
+          {/* Query Form */}
           <div className="mb-8">
             <QueryForm
               onSubmit={handleQuerySubmit}
@@ -53,9 +60,9 @@ export default function Home() {
             />
           </div>
 
-          {/* Progress/Status Section */}
+          {/* Status */}
           {(isActive || statusMessage) && (
-            <div className="mb-6">
+            <div className="mb-6 fade-in">
               <StatusLine
                 message={statusMessage}
                 isActive={isActive}
@@ -64,7 +71,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* Answer Section */}
+          {/* Answer */}
           <div className="mb-6">
             <AnswerSection
               answer={answer}
@@ -73,7 +80,7 @@ export default function Home() {
             />
           </div>
 
-          {/* References Section */}
+          {/* References */}
           <div className="mb-6">
             <ReferencesSection
               answer={answer}
@@ -81,38 +88,36 @@ export default function Home() {
               isVisible={!!answer && sources.length > 0}
             />
           </div>
-
-          {/* Sources Section */}
-          {/* <div className="mb-6">
-            <SourcesSection sources={sources} isVisible={sources.length > 0} />
-          </div> */}
         </div>
 
         {/* Footer */}
-        <div className="mt-16 pt-8 border-t border-gray-200 text-center text-gray-500 text-xs md:text-sm">
+        <div className="mt-16 pt-8 border-t border-white/5 text-center text-gray-600 text-xs md:text-sm">
           <p className="mb-2">
-            Powered by <a href="https://www.aimasterclass.in" className="text-blue-600">AI MasterClass</a> 
+            Powered by{" "}
+            <span className="text-cyan-500/70">
+              hooya
+            </span>
           </p>
-          <p>
+          <p className="flex items-center justify-center gap-4">
             <a
               href="/api/info"
-              className="text-gray-600 hover:text-blue-600 transition-colors"
+              className="text-gray-600 hover:text-cyan-400 transition-colors"
             >
               API Info
-            </a>{" "}
-            <span className="mx-2">•</span>
+            </a>
+            <span className="text-gray-700">|</span>
             <a
               href="/docs"
-              className="text-gray-600 hover:text-blue-600 transition-colors"
+              className="text-gray-600 hover:text-cyan-400 transition-colors"
             >
               API Docs
-            </a>{" "}
-            <span className="mx-2">•</span>
+            </a>
+            <span className="text-gray-700">|</span>
             <a
               href="/health"
-              className="text-gray-600 hover:text-blue-600 transition-colors"
+              className="text-gray-600 hover:text-cyan-400 transition-colors"
             >
-              Health Check
+              Health
             </a>
           </p>
         </div>

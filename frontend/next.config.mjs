@@ -15,6 +15,10 @@ const nextConfig = {
         destination: `${apiUrl}/docs`,
       },
       {
+        source: '/openapi.json',
+        destination: `${apiUrl}/openapi.json`,
+      },
+      {
         source: '/health',
         destination: `${apiUrl}/health`,
       },

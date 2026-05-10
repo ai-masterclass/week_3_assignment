@@ -33,7 +33,7 @@ try:
 except ImportError:
     pass
 
-from test_backend_integration import RAGGenerator, GenerationConfig, SYSTEM_PROMPT
+from rag_generate import RAGGenerator, GenerationConfig, SYSTEM_PROMPT
 
 
 # Global instances
@@ -54,10 +54,8 @@ async def lifespan(app: FastAPI):
     print("="*60)
     
     config = GenerationConfig(
-        llm_provider="openai",
         retrieval_top_k=8,
         refine_query=True,
-        use_reranker=True
     )
     
     rag_generator = RAGGenerator(config)
@@ -251,7 +249,7 @@ IMPORTANT: You have been provided with {len(results)} paper excerpts. Make sure 
         }
         
         payload = {
-            "model": f"openai/{rag_generator.config.llm_model}",
+            "model": rag_generator.config.llm_model,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_message}
@@ -268,12 +266,16 @@ IMPORTANT: You have been provided with {len(results)} paper excerpts. Make sure 
             stream=True
         )
         
+        if response.status_code != 200:
+            yield emit("error", {"message": f"LLM API error ({response.status_code}): {response.text}"})
+            return
+        
         answer_chunks = []
         for line in response.iter_lines():
             if line:
                 line = line.decode('utf-8')
                 if line.startswith('data: '):
-                    data = line[6:]  # Remove 'data: ' prefix
+                    data = line[6:]
                     if data == '[DONE]':
                         break
                     try:
@@ -445,7 +447,7 @@ IMPORTANT: You have been provided with {len(results)} paper excerpts. Make sure 
         }
         
         payload = {
-            "model": f"openai/{rag_generator.config.llm_model}",
+            "model": rag_generator.config.llm_model,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_message}
