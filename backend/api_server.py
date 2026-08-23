@@ -33,8 +33,8 @@ try:
 except ImportError:
     pass
 
-from test_backend_integration import RAGGenerator, GenerationConfig, SYSTEM_PROMPT
-
+#from test_backend_integration import RAGGenerator, GenerationConfig, SYSTEM_PROMPT
+from rag_generate import RAGGenerator, GenerationConfig, SYSTEM_PROMPT
 
 # Global instances
 rag_generator: Optional[RAGGenerator] = None
@@ -43,29 +43,28 @@ rag_generator: Optional[RAGGenerator] = None
 BASE_DIR = Path(__file__).parent
 
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize RAG pipeline on startup."""
     global rag_generator
-    
-    print("\n" + "="*60)
+
+    print("\n" + "=" * 60)
     print("🚀 Initializing RAG pipeline...")
-    print("="*60)
-    
+    print("=" * 60)
+
     config = GenerationConfig(
-        llm_provider="openai",
+        llm_model="openai/gpt-4o",
         retrieval_top_k=8,
-        refine_query=True,
-        use_reranker=True
+        refine_query=True
     )
-    
+
     rag_generator = RAGGenerator(config)
+
     print("\n✅ RAG pipeline ready!")
-    print("="*60 + "\n")
-    
+    print("=" * 60 + "\n")
+
     yield
-    
+
     print("\n👋 Shutting down...")
 
 
@@ -251,7 +250,7 @@ IMPORTANT: You have been provided with {len(results)} paper excerpts. Make sure 
         }
         
         payload = {
-            "model": f"openai/{rag_generator.config.llm_model}",
+            "model": rag_generator.config.llm_model,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_message}
@@ -268,7 +267,14 @@ IMPORTANT: You have been provided with {len(results)} paper excerpts. Make sure 
             stream=True
         )
         
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"OpenRouter streaming request failed "
+                f"({response.status_code}): {response.text}"
+            )
+        
         answer_chunks = []
+        
         for line in response.iter_lines():
             if line:
                 line = line.decode('utf-8')
@@ -289,9 +295,10 @@ IMPORTANT: You have been provided with {len(results)} paper excerpts. Make sure 
         
         # Stage 4: Complete
         processing_time = time.time() - start_time
+
         yield emit("complete", {
             "answer": answer,
-            "sources": list(sources_metadata.values()),
+            "sources": sources_metadata,
             "refined_query": refined if refined != query else None,
             "processing_time": processing_time
         })
@@ -489,7 +496,7 @@ IMPORTANT: You have been provided with {len(results)} paper excerpts. Make sure 
         await websocket.send_json({
             "type": "complete",
             "answer": answer,
-            "sources": list(sources_metadata.values()),
+            "sources": sources_metadata,
             "refined_query": refined if refined != query else None,
             "processing_time": processing_time
         })
