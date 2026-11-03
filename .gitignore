@@ -55,3 +55,5 @@ backend/*.pyc
 
 
 *.npz
+# Prebuilt search index (built by backend/build_index.py) is needed at deploy time
+!backend/embeddings_openai.npz

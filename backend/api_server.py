@@ -33,7 +33,7 @@ try:
 except ImportError:
     pass
 
-from test_backend_integration import RAGGenerator, GenerationConfig, SYSTEM_PROMPT
+from rag_generate import RAGGenerator, GenerationConfig
 
 
 # Global instances
@@ -206,13 +206,13 @@ async def stream_rag_response(
         
         results = await loop.run_in_executor(
             None,
-            lambda: rag_generator.retrieval.retrieve(refined, top_k=top_k)
+            lambda: rag_generator.retrieval.retrieve(refined, top_k=top_k, use_reranker=use_reranker)
         )
-        
+
         if not results:
             yield emit("error", {"message": "No relevant papers found"})
             return
-        
+
         num_papers = len(set(r.paper_id for r in results))
         yield emit("progress", {
             "message": f"Found {len(results)} sources from {num_papers} papers",
@@ -220,78 +220,24 @@ async def stream_rag_response(
             "num_chunks": len(results),
             "num_papers": num_papers
         })
-        
+
         # Stage 3: Generating
         yield emit("progress", {"message": "Generating answer...", "stage": "generating"})
-        
-        # Format context and build sources
-        context = rag_generator._format_context(results)
+
         sources_metadata = rag_generator._build_sources_metadata(results)
-        
-        # Build prompt
-        user_message = f"""Based on the following research paper excerpts, answer this question:
 
-Question: {query}
-
-Research Paper Excerpts:
-{context}
-
-IMPORTANT: You have been provided with {len(results)} paper excerpts. Make sure to:
-1. Review ALL provided papers and cite every one that is relevant to the question
-2. Use inline citations [Paper Title] for all claims
-3. For "which paper" or "what papers" questions, list ALL relevant papers
-4. Do NOT include a References section - only use inline citations"""
-
-        # Stream from OpenRouter
-        import requests
-        
-        headers = {
-            "Authorization": f"Bearer {rag_generator.openrouter_api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": f"openai/{rag_generator.config.llm_model}",
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_message}
-            ],
-            "temperature": rag_generator.config.temperature,
-            "max_tokens": rag_generator.config.max_tokens,
-            "stream": True
-        }
-        
-        response = requests.post(
-            f"{rag_generator.openrouter_base_url}/chat/completions",
-            headers=headers,
-            json=payload,
-            stream=True
-        )
-        
         answer_chunks = []
-        for line in response.iter_lines():
-            if line:
-                line = line.decode('utf-8')
-                if line.startswith('data: '):
-                    data = line[6:]  # Remove 'data: ' prefix
-                    if data == '[DONE]':
-                        break
-                    try:
-                        chunk = json.loads(data)
-                        if chunk["choices"][0]["delta"].get("content"):
-                            content = chunk["choices"][0]["delta"]["content"]
-                            answer_chunks.append(content)
-                            yield emit("chunk", {"content": content})
-                    except json.JSONDecodeError:
-                        continue
-        
+        async for content in rag_generator.stream_answer(query, results):
+            answer_chunks.append(content)
+            yield emit("chunk", {"content": content})
+
         answer = "".join(answer_chunks)
-        
+
         # Stage 4: Complete
         processing_time = time.time() - start_time
         yield emit("complete", {
             "answer": answer,
-            "sources": list(sources_metadata.values()),
+            "sources": sources_metadata,
             "refined_query": refined if refined != query else None,
             "processing_time": processing_time
         })
@@ -415,81 +361,27 @@ async def websocket_query(websocket: WebSocket):
         await websocket.send_json({
             "type": "progress",
             "stage": "generating",
-            "message": "Generating answer with GPT-4..."
+            "message": f"Generating answer with {rag_generator.config.llm_model}..."
         })
-        
-        # Format context and build sources
-        context = rag_generator._format_context(results)
+
         sources_metadata = rag_generator._build_sources_metadata(results)
-        
-        # Build prompt
-        user_message = f"""Based on the following research paper excerpts, answer this question:
 
-Question: {query}
-
-Research Paper Excerpts:
-{context}
-
-IMPORTANT: You have been provided with {len(results)} paper excerpts. Make sure to:
-1. Review ALL provided papers and cite every one that is relevant to the question
-2. Use inline citations [Paper Title] for all claims
-3. For "which paper" or "what papers" questions, list ALL relevant papers
-4. Do NOT include a References section - only use inline citations"""
-
-        # Stream from OpenRouter
-        import requests
-        
-        headers = {
-            "Authorization": f"Bearer {rag_generator.openrouter_api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": f"openai/{rag_generator.config.llm_model}",
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_message}
-            ],
-            "temperature": rag_generator.config.temperature,
-            "max_tokens": rag_generator.config.max_tokens,
-            "stream": True
-        }
-        
-        response = requests.post(
-            f"{rag_generator.openrouter_base_url}/chat/completions",
-            headers=headers,
-            json=payload,
-            stream=True
-        )
-        
         answer_chunks = []
-        for line in response.iter_lines():
-            if line:
-                line_str = line.decode('utf-8')
-                if line_str.startswith('data: '):
-                    data_str = line_str[6:]
-                    if data_str == '[DONE]':
-                        break
-                    try:
-                        chunk = json.loads(data_str)
-                        if chunk["choices"][0]["delta"].get("content"):
-                            content = chunk["choices"][0]["delta"]["content"]
-                            answer_chunks.append(content)
-                            await websocket.send_json({
-                                "type": "chunk",
-                                "content": content
-                            })
-                    except json.JSONDecodeError:
-                        continue
-        
+        async for content in rag_generator.stream_answer(query, results):
+            answer_chunks.append(content)
+            await websocket.send_json({
+                "type": "chunk",
+                "content": content
+            })
+
         answer = "".join(answer_chunks)
-        
+
         # Stage 7: Complete
         processing_time = time.time() - start_time
         await websocket.send_json({
             "type": "complete",
             "answer": answer,
-            "sources": list(sources_metadata.values()),
+            "sources": sources_metadata,
             "refined_query": refined if refined != query else None,
             "processing_time": processing_time
         })
@@ -536,6 +428,6 @@ if __name__ == "__main__":
         "api_server:app",
         host="0.0.0.0",
         port=port,
-        reload=True,
+        reload="PORT" not in os.environ,  # auto-reload for local dev only
         log_level="info"
     )
